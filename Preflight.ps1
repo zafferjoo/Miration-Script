@@ -1,6 +1,6 @@
 ﻿###Disclaimer: This script does make any change to the environment.
 ###Ensure Exchange online powershell and msonline modules are installed on the server
-###Server should have internet connectivity
+###Server should have internet connectivity.
 
 
 
