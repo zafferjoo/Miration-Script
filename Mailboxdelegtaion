@@ -1,0 +1,186 @@
+<# 
+.SYNOPSIS
+    The script scans through Mailbox Permission and CalendarPermissions to generate the
+    Permission details file.
+
+.DESCRIPTION 
+    The script gets the list of Mailboxes via a Sourcefile with "Userprincipalname" as header.The scripts scans the Mailbox Delegation rights (Sendas,Fullaccess) and CalendarPermissions.
+    The unwanted permission results are ignored and results are exported to two seperate csv files.
+    One contains the CalendarPermission and DelegationDetails.
+ 
+.NOTES 
+    The script needs to run on Windows 10 machine with Windows PowerShell Installed. Besides this Msonline and ExchangeOnline module needs to be installed
+
+.COMPONENT 
+    Exchange Online Module and MSonline PowerShell modules needs to be installed.
+
+.LINK 
+    The script can be downloaded from Script folder or URL .
+ 
+.Parameter ParameterName 
+    There are three Parameters
+    1.Inputfile  : It is a csv file along with location like "c:\users\James\Desktop\Wave1.csv" with userprincipalname as header.
+    2.DelegationDetails:It is a name of a csv file along with location like "c:\users\James\Desktop\DelegationDetails.csv which contains sendas,Fullaccess Permission details.
+    3.CalendarPermission:It is a name of a csv file along with location like "c:\users\James\Desktop\Wave1Output.csv" which contains Calendar Permission details.
+
+
+
+#>
+
+
+
+
+
+[CmdletBinding()]
+param(
+
+[Parameter(Mandatory=$True)][string]$SourceFile,
+[Parameter(Mandatory=$True)][string]$DelegationDetails,
+[Parameter(Mandatory=$False)][String]$CalendarPermission
+)
+
+function CalRights
+{
+param([string]$User)
+ $Identity=$user +":\Calendar"
+ $Cal=Get-MailboxFolderPermission $Identity |?{!($_.User -match "Default|Anonymous")}
+ $Temp=$null;$Temp=@()
+ $Obj=new-object psobject
+ if(!($Cal -eq $null)) 
+  { 
+   Write-Host "Calendar Permissions found for User $($user)"  -foregroundcolor Green
+       
+       foreach($C in $Cal)
+        {
+       
+        $obj1=new-object psobject
+        $obj1 |add-member -NotePropertyname Mailboxname -NotePropertyValue          $User
+        $obj1 |add-member -NotePropertyname User -NotePropertyValue $C.User 
+        $obj1 |add-member -NotePropertyname AccessRights -NotePropertyValue  $C.AccessRights        
+        $Temp+=$obj1
+        }
+      $Obj=$Temp
+     }
+     
+   else
+    {
+        $obj1=new-object psobject
+        $obj1 |add-member -NotePropertyname Mailboxname -NotePropertyValue          $User
+        $obj1 |add-member -NotePropertyname User -NotePropertyValue "No User" 
+        $obj1 |add-member -NotePropertyname AccessRights -NotePropertyValue    "No Cal Rights"        
+        $Temp+=$obj1
+    }
+$Obj=$Temp
+return $obj
+
+}
+
+
+
+
+function Fullaccess
+{
+param([string]$User)
+   $Temp=$Null
+   $Temp=@()
+   
+#######################################Fullaccess############
+$Full=get-mailboxPermission $User |?{!($_.User -eq "NT AUTHORITY\SELF")}
+if($Full.count -gt 0)
+  {  
+  Write-Host "Permission Found"
+   
+
+   foreach($F in $Full)
+     {
+         $obj1=new-object psobject
+         $obj1 |add-member -NotePropertyname MailboxName -NotePropertyValue $User
+         $obj1 |add-member -NotePropertyname User -NotePropertyValue $F.User 
+         $obj1 |add-member -NotePropertyname AccessRights -NotePropertyValue  $F.AccessRights       
+         $Temp+=$obj1
+      }   
+   
+  }
+
+else
+ {       Write-Host "Full Permission Not found for user $($user)"
+         $obj1=new-object psobject
+         $obj1 |add-member -NotePropertyname MailboxName -NotePropertyValue $User
+         $obj1 |add-member -NotePropertyname User -NotePropertyValue "No USER" 
+         $obj1 |add-member -NotePropertyname AccessRights -NotePropertyValue    "NO FULL ACCESS"      
+         $Temp+=$obj1
+              
+         
+ }
+
+
+ return $Temp
+
+}
+
+function Sendas
+{
+param([string]$User)
+   $Temp=$Null
+   $Temp=@()
+$SendAs=get-RecipientPermission $user|?{!($_.Trustee -eq "NT AUTHORITY\SELF")}
+if($SendAs.count -gt 0)
+    {  
+        foreach($F in $SendAs)
+          {
+            $obj1=new-object psobject
+            $obj1 |add-member -NotePropertyname MailboxName -NotePropertyValue  $user
+            $obj1 |add-member -NotePropertyname User -NotePropertyValue  $F.Trustee 
+            $obj1 |add-member -NotePropertyname AccessRights -NotePropertyValue  $F.AccessRights       
+            $Temp+=$obj1
+      }   
+
+  }
+
+else
+ {
+         Write-host "Sends Permisisons not found for user $($user)" 
+         $obj1=new-object psobject
+            $obj1 |add-member -NotePropertyname MailboxName -NotePropertyValue  $user
+            $obj1 |add-member -NotePropertyname User -NotePropertyValue  "NO USER" 
+            $obj1 |add-member -NotePropertyname AccessRights -NotePropertyValue  "NO SENDAS PERMISSIONS"       
+            $Temp+=$obj1     
+         
+ }
+
+
+return $Temp
+}
+
+function AccessRights
+{
+  param([string]$User)
+  $FullAcc=fullaccess -User $user
+  $FullAcc |export-csv $DelegationDetails -nti -Append
+  $sendAs= Sendas -User $user
+  $sendAs |export-csv $DelegationDetails -nti -Append
+
+
+}
+#Script Starts here
+$users=import-csv $SourceFile
+
+$z=get-date
+$file=[string]$z.day+ "_" +$z.month  +"_" +$z.year +"_" +$z.hour+$z.minute+$z.second
+$Logfile=$file +".txt"
+
+
+foreach($user in $users)
+{
+   $Identity=$User.Userprincipalname
+   $y="Scanning CalendarPermission and DelegationDetails of  User $($Identity)"
+   $y>>$Logfile
+   Write-Host "Scanning CalendarPermission and DelegationDetails of  User $($Identity)"
+   
+   $Access=AccessRights -User $Identity
+   $CalRights=CalRights -User $Identity
+   $Access |Export-csv -nti $DelegationDetails  -Append
+   $CalRights |Export-csv -nti $CalendarPermission  -Append -force
+
+
+}
